@@ -356,7 +356,7 @@ class _OilHomeState extends State<OilHome> {
   finally{if(mounted)setState(()=>busy=false);}
 }
  double remaining(Map<String,dynamic> p){final id='${p['id']}';return number(base[id]).toDouble()-max(0,number(previousSales[id])-number(map(jsonDecode(prefs?.getString('stockBaselineSales')??'{}'))[id])).toDouble();}
- bool fuel(Map<String,dynamic> p)=>fuelIds.split(',').map((e)=>e.trim()).contains('${p['id']}');
+ bool fuel(Map<String,dynamic> p)=>{'1','2','3',...fuelIds.split(',').map((e)=>e.trim())}.contains('${p['id']}');
  String barcode(Map<String,dynamic> p){final b=list(p['barcodes']);return b.isEmpty?'':'${b.first}';}
  Map<String,dynamic>? findBarcode(String code){for(final p in products){if(list(p['barcodes']).any((e)=>'$e'==code))return p;}return null;}
 
@@ -723,7 +723,7 @@ class _OilHomeState extends State<OilHome> {
      card('Kritik stok ayarı',const Text('Ürün detayında minimum stok seviyesini belirleyebilir, ardından kritik stokları siparişe ekleyebilirsiniz.'),icon:Icons.warning_amber)
    ]);
  }
- Widget topPage(){final totals=<String,num>{};for(final d in daily.values){for(final e in map(d).entries){totals[e.key]=(totals[e.key]??0)+number(e.value);}}final sorted=products.where((p)=>!fuel(p)&&totals.containsKey('${p['id']}')).toList()..sort((a,b)=>number(totals['${b['id']}']).compareTo(number(totals['${a['id']}'])));return Column(children:[Row(children:[Expanded(child:Text('Son ${daily.length} gün • Akaryakıt hariç ilk 100')),FilledButton.icon(onPressed:refreshSales,icon:const Icon(Icons.refresh),label:const Text('Güncelle'))]),Expanded(child:ListView.builder(itemCount:min(100,sorted.length),itemBuilder:(c,i){final p=sorted[i];return Card(child:ListTile(leading:photo('${p['id']}',48),title:Text('${i+1}. ${p['name']}'),subtitle:Text('Šifra: ${p['id']}'),trailing:Text('${money(totals['${p['id']}'])} adet')));} ))]);}
+ Widget topPage(){final totals=<String,num>{};for(final d in daily.values){for(final e in map(d).entries){totals[e.key]=(totals[e.key]??0)+number(e.value);}}final sorted=products.where((p)=>!fuel(p)&&totals.containsKey('${p['id']}')).toList()..sort((a,b)=>number(totals['${b['id']}']).compareTo(number(totals['${a['id']}'])));return Column(children:[Row(children:[Expanded(child:Text('Son ${daily.length} gün • Akaryakıt hariç ilk 300')),FilledButton.icon(onPressed:refreshSales,icon:const Icon(Icons.refresh),label:const Text('Güncelle'))]),Expanded(child:ListView.builder(itemCount:min(300,sorted.length),itemBuilder:(c,i){final p=sorted[i];return Card(child:ListTile(leading:photo('${p['id']}',48),title:Text('${i+1}. ${p['name']}'),subtitle:Text('Šifra: ${p['id']}'),trailing:Text('${money(totals['${p['id']}'])} adet')));} ))]);}
  String labelMode='custom';
  double labelWidthMm=38,labelHeightMm=25,labelGapMm=0,labelMarginMm=0;
 
