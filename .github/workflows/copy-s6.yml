@@ -1,0 +1,33 @@
+name: Copy S6 into S9
+on:
+  push:
+    paths:
+      - '.github/workflows/copy-s6.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  copy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout S9
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Checkout S6 source
+        uses: actions/checkout@v4
+        with:
+          repository: errayy27-web/S6
+          ref: main
+          path: source-s6
+      - name: Copy all program files into S9
+        run: |
+          rsync -a --delete --exclude='.git' --exclude='.github' --exclude='source-s6' source-s6/ ./
+          rm -rf source-s6
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Copy complete S6 program into S9"
+            git push
+          fi
