@@ -456,15 +456,40 @@ class _OilHomeState extends State<OilHome> {
  }
  Future<void> exportDiscrepancies()async{await exportCsv('SSOIL_EKSIK_FAZLA',[['Ürün kodu','Ürün adı','Barkod','Sistem stoku','Sayılan stok','Fark','Açıklama','Tarih'],...discrepancies.values.map((v){final d=map(v),p=byId('${d['product_id']}')??{};return [d['product_id'],p['name']??'',barcode(p),d['system_stock']??'',d['counted_stock']??'',d['difference']??0,d['note']??'',d['date']??''];})]);}
  Future<void> addDiscrepancy(String kind,{Map<String,dynamic>? product})async{
-  final code=TextEditingController(text:product==null?'':'${product['id']}'),qty=TextEditingController(),note=TextEditingController();
-  final ok=await showDialog<bool>(context:context,builder:(c)=>AlertDialog(title:const Text('Stok Sayımı'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[TextField(controller:code,decoration:const InputDecoration(labelText:'Ürün kodu veya barkod')),const SizedBox(height:8),TextField(controller:qty,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Sayılan toplam stok')),const SizedBox(height:8),TextField(controller:note,decoration:const InputDecoration(labelText:'Açıklama'))])),actions:[TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('İptal')),FilledButton(onPressed:()=>Navigator.pop(c,true),child:const Text('Kaydet'))]));
-  if(ok!=true)return;final p=product??findBarcode(code.text)??byId(code.text.trim());final counted=num.tryParse(qty.text.replaceAll(',','.'));
-  if(p==null||counted==null||counted<0){notice('Geçerli ürün ve sayılan stok gir');return;}
-  final system=remaining(p);final difference=counted-system;
-  final id='${p['id']}';final data={'product_id':id,'system_stock':system,'counted_stock':counted,'difference':difference,'note':note.text,'date':DateTime.now().toIso8601String()};
-  setState(()=>discrepancies[id]=data);await save();notice('Stok farkı: ${difference>0?'+':''}$difference');
+  final code=TextEditingController(text:product==null?'':'${product['id']}');
+  final original=product==null?null:discrepancies['${product['id']}'];
+  final qty=TextEditingController(text:original==null?'':'${map(original)['counted_stock']}');
+  final extra=TextEditingController();
+  final note=TextEditingController(text:original==null?'':'${map(original)['note']??''}');
+  final ok=await showDialog<bool>(context:context,builder:(c)=>StatefulBuilder(builder:(c,refresh){
+    final p=product??findBarcode(code.text)??byId(code.text.trim());
+    final previous=p==null?null:discrepancies['${p['id']}'];
+    final old=previous==null?0:number(map(previous)['counted_stock']);
+    return AlertDialog(title:const Text('Stok Sayımı / Düzeltme'),content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[
+      TextField(controller:code,onChanged:(_)=>refresh((){}),decoration:const InputDecoration(labelText:'Ürün kodu veya barkod')),
+      if(p!=null)...[const SizedBox(height:10),Text('${p['name']}',style:const TextStyle(fontWeight:FontWeight.bold)),Text('Orijinal reel stok: ${remaining(p)}'),Text('Önceki sayılan stok: $old')],
+      TextField(controller:qty,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Sayılan stok (düzelt)',helperText:'Önceki miktarın yerine geçer')),
+      TextField(controller:extra,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Ek stok (+)',helperText:'Diğer reyon veya depo miktarı')),
+      TextField(controller:note,decoration:const InputDecoration(labelText:'Açıklama'))
+    ])),actions:[TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('İptal')),FilledButton(onPressed:()=>Navigator.pop(c,true),child:const Text('Kaydet'))]);
+  }));
+  if(ok!=true)return;
+  final p=product??findBarcode(code.text)??byId(code.text.trim());
+  if(p==null){notice('Geçerli ürün seç');return;}
+  final id='${p['id']}';
+  final prior=discrepancies[id];
+  final old=prior==null?0:number(map(prior)['counted_stock']);
+  final revised=qty.text.trim().isEmpty?old:num.tryParse(qty.text.trim().replaceAll(',','.'));
+  final added=extra.text.trim().isEmpty?0:num.tryParse(extra.text.trim().replaceAll(',','.'));
+  if(revised==null||added==null||revised<0||added<0){notice('Geçerli miktar gir');return;}
+  final counted=revised+added;
+  final system=remaining(p);
+  final difference=counted-system;
+  setState(()=>discrepancies[id]={'product_id':id,'system_stock':system,'counted_stock':counted,'difference':difference,'note':note.text,'date':DateTime.now().toIso8601String()});
+  await save();
+  notice('Sayılan: $counted');
  }
- Widget countPage()=>ListView(children:[card('Stok Sayım / Eksik - Fazla',Column(children:[Wrap(spacing:8,runSpacing:8,children:[action('Barkod Oku',Icons.qr_code_scanner,scanCount),action('Sayım Gir',Icons.fact_check,()=>addDiscrepancy('sayim')),action('Tüm Ürünler Excel',Icons.file_download,exportProducts),action('Eksik/Fazla Excel',Icons.table_view,exportDiscrepancies)]),const SizedBox(height:8),for(final e in discrepancies.entries)ListTile(title:Text("${byId('${map(e.value)['product_id']}')?['name']??map(e.value)['product_id']}"),subtitle:Text('Sistem: ${map(e.value)['system_stock']} • Sayılan: ${map(e.value)['counted_stock']}'),trailing:Row(mainAxisSize:MainAxisSize.min,children:[Text('${number(map(e.value)['difference'])>0?'+':''}${map(e.value)['difference']}',style:TextStyle(color:Theme.of(context).colorScheme.primary,fontWeight:FontWeight.bold)),IconButton(icon:const Icon(Icons.close),onPressed:()=>confirmClear('Bu kaydı sil?',(){discrepancies.remove(e.key);}))])),OutlinedButton.icon(onPressed:()=>confirmClear('Eksik/Fazla listesini temizle?',()=>discrepancies.clear()),icon:const Icon(Icons.delete_sweep),label:const Text('Listeyi temizle'))]),icon:Icons.fact_check)]);
+ Widget countPage()=>ListView(children:[card('Stok Sayım / Eksik - Fazla',Column(children:[Wrap(spacing:8,runSpacing:8,children:[action('Barkod Oku',Icons.qr_code_scanner,scanCount),action('Sayım Gir',Icons.fact_check,()=>addDiscrepancy('sayim')),action('Tüm Ürünler Excel',Icons.file_download,exportProducts),action('Eksik/Fazla Excel',Icons.table_view,exportDiscrepancies)]),const SizedBox(height:8),for(final e in discrepancies.entries)ListTile(onTap:()=>addDiscrepancy('sayim',product:byId('${map(e.value)['product_id']}')),title:Text("${byId('${map(e.value)['product_id']}')?['name']??map(e.value)['product_id']}"),subtitle:Text('Sistem: ${map(e.value)['system_stock']} • Sayılan: ${map(e.value)['counted_stock']}'),trailing:Row(mainAxisSize:MainAxisSize.min,children:[Text('${number(map(e.value)['difference'])>0?'+':''}${map(e.value)['difference']}',style:TextStyle(color:Theme.of(context).colorScheme.primary,fontWeight:FontWeight.bold)),IconButton(icon:const Icon(Icons.close),onPressed:()=>confirmClear('Bu kaydı sil?',(){discrepancies.remove(e.key);}))])),OutlinedButton.icon(onPressed:()=>confirmClear('Eksik/Fazla listesini temizle?',()=>discrepancies.clear()),icon:const Icon(Icons.delete_sweep),label:const Text('Listeyi temizle'))]),icon:Icons.fact_check)]);
 
  Future<void> addPhoto(Map<String,dynamic> p,ImageSource src)async{final img=await ImagePicker().pickImage(source:src,imageQuality:70,maxWidth:1000);if(img==null)return;final dir=await getApplicationDocumentsDirectory();final f=await File(img.path).copy('${dir.path}/ssoil_${p['id']}.jpg');setState(()=>photos['${p['id']}']=f.path);await save();}
  void productDetail(Map<String, dynamic> p) {
