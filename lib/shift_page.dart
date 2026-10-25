@@ -130,21 +130,34 @@ class _ShiftPageState extends State<ShiftPage> {
   final delivered=TextEditingController(text:existing==null?'':'${existing['delivered_cash']??''}');
   final expectedEdit=TextEditingController(text:existing==null?'':'${existing['expected_cash']??''}');
   final now=DateTime.now();
-  final closedAt=existing==null?now.toUtc().toIso8601String():'${existing['closed_at']??now.toUtc().toIso8601String()}';
+  DateTime initial=now;
+  if(existing!=null&&existing['closed_at']!=null){
+    initial=DateTime.tryParse('${existing['closed_at']}')?.toLocal()??now;
+  }
+  final timeEdit=TextEditingController(text:'${initial.hour.toString().padLeft(2,'0')}:${initial.minute.toString().padLeft(2,'0')}:${initial.second.toString().padLeft(2,'0')}');
+  final expectedAtStart=existing==null?number(daily['cash_carryover'])+number(widget.kasa['cash'])+sum('cash_collection')-sum('cash_expense'):number(existing['expected_cash']);
   final ok=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
     title:Text(existing==null?'Vardiya Devri':'Vardiya Kaydını Düzelt'),
     content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
       TextField(controller:name,decoration:const InputDecoration(labelText:'Çalışan adı')),
       TextField(controller:delivered,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Teslim nakit KM')),
       if(existing!=null)TextField(controller:expectedEdit,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Sabit beklenen nakit KM')),
-      Text('İşlem zamanı: ${now.hour.toString().padLeft(2,'0')}:${now.minute.toString().padLeft(2,'0')}:${now.second.toString().padLeft(2,'0')}'),
+      TextField(controller:timeEdit,decoration:const InputDecoration(labelText:'Vardiya işlem saati (SS:DD:SN)',helperText:'İlk kayıtta şu anki saat; sonra düzeltilebilir')),
+      if(existing==null)Text('Şu anki beklenen: ${km(expectedAtStart)}'),
+
     ])),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('İptal')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Kaydet'))]));
   if(ok!=true)return;
+  final parts=timeEdit.text.trim().split(':');
+  if(parts.length!=3){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Saat SS:DD:SN şeklinde olmalı')));return;}
+  final hh=int.tryParse(parts[0]),mm=int.tryParse(parts[1]),ss=int.tryParse(parts[2]);
+  if(hh==null||mm==null||ss==null||hh>23||hh<0||mm>59||mm<0||ss>59||ss<0){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Geçersiz işlem saati')));return;}
+  final localStamp=DateTime(date.year,date.month,date.day,hh,mm,ss);
+  final closedAt=localStamp.toUtc().toIso8601String();
   final value=num.tryParse(delivered.text.replaceAll(',','.'));
   final fixed=existing==null?null:num.tryParse(expectedEdit.text.replaceAll(',','.'));
   if(value==null||name.text.trim().isEmpty||(existing!=null&&fixed==null))return;
-  final expected=existing==null?number(daily['cash_carryover'])+number(widget.kasa['cash'])+sum('cash_collection')-sum('cash_expense'):fixed!;
-  final data=<String,dynamic>{'employee_name':name.text.trim(),'expected_cash':expected,'delivered_cash':value};
+  final expected=existing==null?expectedAtStart:fixed!;
+  final data=<String,dynamic>{'employee_name':name.text.trim(),'expected_cash':expected,'delivered_cash':value,'closed_at':closedAt};
   if(existing==null){
     data.addAll({'business_date':dateKey,'shift_number':shift,'status':'closed','closed_at':closedAt,
       'snapshot':{'cash_collection':sum('cash_collection'),'cash_expense':sum('cash_expense'),
