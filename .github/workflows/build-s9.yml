@@ -1,0 +1,50 @@
+name: Build S9 Android APK
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'lib/**'
+      - 'pubspec.yaml'
+      - 'assets/**'
+      - 'android_icons/**'
+      - '.github/workflows/build-s9.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Create Android scaffold and permissions
+        shell: bash
+        run: |
+          set -eu
+          mkdir -p /tmp/ssoil_android
+          cd /tmp/ssoil_android
+          flutter create --platforms=android --org com.ssoil --project-name ss_oil_stok_kontrol .
+          cp -R android "$GITHUB_WORKSPACE/android"
+          cd "$GITHUB_WORKSPACE"
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+          m=Path('android/app/src/main/AndroidManifest.xml')
+          s=m.read_text().replace('<application','<uses-permission android:name="android.permission.INTERNET"/><uses-permission android:name="android.permission.CAMERA"/><application',1)
+          s=s.replace('<application','<application android:usesCleartextTraffic="true"',1)
+          m.write_text(s)
+          for icon in Path('android_icons').glob('mipmap-*/ic_launcher.png'):
+              dst=Path('android/app/src/main/res')/icon.parent.name/'ic_launcher.png'
+              dst.parent.mkdir(parents=True,exist_ok=True)
+              shutil.copy2(icon,dst)
+          PY
+          flutter pub get
+      - name: Build debug APK
+        run: flutter build apk --debug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: S9-Android-APK
+          path: build/app/outputs/flutter-apk/*.apk
