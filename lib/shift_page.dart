@@ -9,7 +9,8 @@ class ShiftPage extends StatefulWidget {
  final Map<String,dynamic> kasa;
  final String kasaDate;
  final Map<String,dynamic> timedKasaHistory;
- const ShiftPage({super.key,required this.request,required this.kasa,required this.kasaDate,required this.timedKasaHistory});
+ final Map<String,dynamic> kasaArchive;
+ const ShiftPage({super.key,required this.request,required this.kasa,required this.kasaDate,required this.timedKasaHistory,required this.kasaArchive});
  @override State<ShiftPage> createState()=>_ShiftPageState();
 }
 class _ShiftPageState extends State<ShiftPage> {
@@ -78,6 +79,58 @@ class _ShiftPageState extends State<ShiftPage> {
   if(r==null||r.statusCode!=200)throw Exception(r?.body??'Bağlantı yok');
   return parse(r.body);
  }
+ bool autoClosing=false;
+ String dateOf(DateTime d)=>d.toIso8601String().substring(0,10);
+ Future<void> closePreviousDayFromArchive()async{
+   if(autoClosing||offline||pendingWrites.isNotEmpty)return;
+   final now=DateTime.now();
+   if(dateKey!=dateOf(now))return;
+   final previous=dateOf(now.subtract(const Duration(days:1)));
+   final archived=widget.kasaArchive[previous];
+   if(archived is! Map)return;
+   final totals=Map<String,dynamic>.from(archived);
+   if('${totals['date']??previous}'!=previous||totals['cash']==null||totals['card']==null||
+       totals['mtel_dopuna']==null||totals['aero_dopuna']==null)return;
+   autoClosing=true;
+   try{
+     final existing=await fetch('ssoil_shift_handoffs','business_date=eq.$previous&shift_number=eq.3');
+     if(existing.isNotEmpty)return;
+     final previousDaily=await fetch('ssoil_shift_daily','business_date=eq.$previous');
+     final previousTransactions=await fetch('ssoil_shift_transactions','business_date=eq.$previous&deleted_at=is.null');
+     final carry=previousDaily.isEmpty?0:number(previousDaily.first['cash_carryover']);
+     num adjustment=0;
+     for(final tx in previousTransactions){
+       if(tx['kind']=='cash_collection')adjustment+=number(tx['amount']);
+       if(tx['kind']=='cash_expense')adjustment-=number(tx['amount']);
+     }
+     final expected=carry+number(totals['cash'])+adjustment;
+     final closed=DateTime(now.year,now.month,now.day).toUtc().toIso8601String();
+     final payload={'business_date':previous,'shift_number':3,'employee_name':'3. Vardiya',
+       'closed_at':closed,'expected_cash':expected,'delivered_cash':0,
+       'status':'pending_delivery','snapshot':{
+         'source':'archived_day_end_kasa','archive_date':previous,
+         'cash':totals['cash'],'card':totals['card'],
+         'cash_fuel':totals['cash_fuel'],'cash_market':totals['cash_market'],
+         'mtel_dopuna':totals['mtel_dopuna'],'aero_dopuna':totals['aero_dopuna'],
+         'fuel_sales':totals['fuel_sales'],'market_sales':totals['market_sales'],
+         'delivered_pending':true}};
+     await save('POST','ssoil_shift_handoffs',[payload]);
+   }catch(_){/* Retry on the next successful refresh. */}
+   finally{autoClosing=false;}
+ }
+ Future<void> carryPreviousThirdShift(Map<String,dynamic> record,num delivered)async{
+   final today=dateOf(DateTime.now());
+   final previous=dateOf(DateTime.now().subtract(const Duration(days:1)));
+   if('${record['business_date']}'!=previous||number(record['shift_number'])!=3)return;
+   final existing=await fetch('ssoil_shift_daily','business_date=eq.$today');
+   final amount=double.parse(delivered.toStringAsFixed(2));
+   if(existing.isEmpty){
+     await save('POST','ssoil_shift_daily',[{'business_date':today,'cash_carryover':amount}]);
+   }else{
+     await save('PATCH','ssoil_shift_daily',{'cash_carryover':amount},
+       filter:'?business_date=eq.$today&revision=eq.${existing.first['revision']}');
+   }
+ }
  Future<void> refresh()async{
   if(busy||!mounted)return;busy=true;
   try{
@@ -94,6 +147,7 @@ class _ShiftPageState extends State<ShiftPage> {
    ]);
    if(mounted)setState((){transactions=v[0];options=v[1];banks=v[2];employees=v[3];handoffs=v[4];daily=v[5].isEmpty?{}:v[5].first;openings=v[6];error='';offline=false;lastSync=DateTime.now();});
    await persistLocal();
+   if(dateKey==dateOf(DateTime.now()))Future.microtask(closePreviousDayFromArchive);
   }catch(e){if(mounted)setState((){error='Çevrimdışı: yerel kayıtlar gösteriliyor';offline=true;});}
   finally{busy=false;}
  }
@@ -184,6 +238,7 @@ class _ShiftPageState extends State<ShiftPage> {
   final cashCollected=sum('cash_collection',until:localStamp),cashSpent=sum('cash_expense',until:localStamp);
   final bankCollected=sum('bank_collection',until:localStamp),bankSpent=sum('bank_expense',until:localStamp);
   final data=<String,dynamic>{'employee_name':name.text.trim(),'expected_cash':expected,'delivered_cash':value,'closed_at':closedAt};
+  if(existing!=null&&number(existing['shift_number'])==3&&existing['status']=='pending_delivery')data['status']='closed';
   if(existing==null){
     data.addAll({'business_date':dateKey,'shift_number':shift,'status':'closed','closed_at':closedAt,
       'snapshot':{'cash_collection':cashCollected,'cash_expense':cashSpent,
@@ -191,6 +246,7 @@ class _ShiftPageState extends State<ShiftPage> {
     await save('POST','ssoil_shift_handoffs',[data]);
   }else{
     await save('PATCH','ssoil_shift_handoffs',data,filter:'?id=eq.${existing['id']}&revision=eq.${existing['revision']}');
+    if(existing['status']=='pending_delivery')await carryPreviousThirdShift(existing,value);
   }
  }
  Future<void> deleteHandoff(Map<String,dynamic> record)async{
