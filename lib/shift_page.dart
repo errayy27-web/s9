@@ -81,12 +81,12 @@ class _ShiftPageState extends State<ShiftPage> {
   }catch(e){if(mounted)setState((){error='Çevrimdışı: yerel kayıtlar gösteriliyor';offline=true;});}
   finally{busy=false;}
  }
- Future<void> save(String method,String table,Object data,{String filter=''})async{
+ Future<void> save(String method,String table,Object? data,{String filter=''})async{
   if(busy)return;busy=true;
   final op=<String,dynamic>{'method':method,'table':table,'data':data,'filter':filter};
   try{
    final r=await widget.request(method,table+filter,body:data,prefer:'return=representation');
-   if(r==null||r.statusCode<200||r.statusCode>=300||r.body.trim()=='[]')throw Exception(r?.body??'Bağlantı yok');
+   if(r==null||r.statusCode<200||r.statusCode>=300||(method!='DELETE'&&r.body.trim()=='[]'))throw Exception(r?.body??'Bağlantı yok');
   }catch(e){
    pendingWrites.add(op);
    if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('İşlem çevrimdışı kuyruğa alındı. Bağlanınca gönderilecek.')));
