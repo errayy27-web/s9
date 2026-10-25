@@ -125,15 +125,43 @@ class _ShiftPageState extends State<ShiftPage> {
   await save(exists?'PATCH':'POST',table,exists?{field:data[field]}:[data],filter:exists?filter:'');
  }
  num sum(String kind)=>transactions.where((v)=>v['kind']==kind&&v['shift_number']==shift).fold<num>(0,(a,v)=>a+(num.tryParse(v['amount'].toString())??0));
- Future<void> handoff()async{
-  final name=TextEditingController(),delivered=TextEditingController();
-  final ok=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:const Text('Vardiya Devir'),content:Column(mainAxisSize:MainAxisSize.min,children:[TextField(controller:name,decoration:const InputDecoration(labelText:'Çalışan adı')),TextField(controller:delivered,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Teslim nakit KM'))]),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('İptal')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Kaydet'))]));
-  if(ok!=true)return;final value=num.tryParse(delivered.text.replaceAll(',','.'));if(value==null||name.text.trim().isEmpty)return;
-  final expected=number(daily['cash_carryover'])+number(widget.kasa['cash'])+sum('cash_collection')-sum('cash_expense');
-  final data={'business_date':dateKey,'shift_number':shift,'employee_name':name.text.trim(),'status':'closed','closed_at':DateTime.now().toUtc().toIso8601String(),'expected_cash':expected,'delivered_cash':value,'snapshot':{'cash_collection':sum('cash_collection'),'cash_expense':sum('cash_expense'),'bank_collection':sum('bank_collection'),'bank_expense':sum('bank_expense')}};
-  final previous=handoffs.where((h)=>h['shift_number']==shift).toList();
-  if(previous.isEmpty){await save('POST','ssoil_shift_handoffs',[data]);}
-  else{await save('PATCH','ssoil_shift_handoffs',data,filter:'?id=eq.'+previous.first['id'].toString()+'&revision=eq.'+previous.first['revision'].toString());}
+ Future<void> handoff({Map<String,dynamic>? existing})async{
+  final name=TextEditingController(text:existing==null?'':'${existing['employee_name']??''}');
+  final delivered=TextEditingController(text:existing==null?'':'${existing['delivered_cash']??''}');
+  final expectedEdit=TextEditingController(text:existing==null?'':'${existing['expected_cash']??''}');
+  final now=DateTime.now();
+  final closedAt=existing==null?now.toUtc().toIso8601String():'${existing['closed_at']??now.toUtc().toIso8601String()}';
+  final ok=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
+    title:Text(existing==null?'Vardiya Devri':'Vardiya Kaydını Düzelt'),
+    content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
+      TextField(controller:name,decoration:const InputDecoration(labelText:'Çalışan adı')),
+      TextField(controller:delivered,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Teslim nakit KM')),
+      if(existing!=null)TextField(controller:expectedEdit,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Sabit beklenen nakit KM')),
+      Text('İşlem zamanı: ${now.hour.toString().padLeft(2,'0')}:${now.minute.toString().padLeft(2,'0')}:${now.second.toString().padLeft(2,'0')}'),
+    ])),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('İptal')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Kaydet'))]));
+  if(ok!=true)return;
+  final value=num.tryParse(delivered.text.replaceAll(',','.'));
+  final fixed=existing==null?null:num.tryParse(expectedEdit.text.replaceAll(',','.'));
+  if(value==null||name.text.trim().isEmpty||(existing!=null&&fixed==null))return;
+  final expected=existing==null?number(daily['cash_carryover'])+number(widget.kasa['cash'])+sum('cash_collection')-sum('cash_expense'):fixed!;
+  final data=<String,dynamic>{'employee_name':name.text.trim(),'expected_cash':expected,'delivered_cash':value};
+  if(existing==null){
+    data.addAll({'business_date':dateKey,'shift_number':shift,'status':'closed','closed_at':closedAt,
+      'snapshot':{'cash_collection':sum('cash_collection'),'cash_expense':sum('cash_expense'),
+        'bank_collection':sum('bank_collection'),'bank_expense':sum('bank_expense'),'recorded_at':closedAt}});
+    await save('POST','ssoil_shift_handoffs',[data]);
+  }else{
+    await save('PATCH','ssoil_shift_handoffs',data,filter:'?id=eq.${existing['id']}&revision=eq.${existing['revision']}');
+  }
+ }
+ Future<void> deleteHandoff(Map<String,dynamic> record)async{
+  final ok=await showDialog<bool>(context:context,builder:(c)=>AlertDialog(
+    title:const Text('Vardiya kaydını sil'),
+    content:Text('${record['shift_number']}. vardiya kaydı silinsin mi?'),
+    actions:[TextButton(onPressed:()=>Navigator.pop(c,false),child:const Text('İptal')),
+      FilledButton(onPressed:()=>Navigator.pop(c,true),child:const Text('Sil'))]));
+  if(ok!=true)return;
+  await save('DELETE','ssoil_shift_handoffs',null,filter:'?id=eq.${record['id']}&revision=eq.${record['revision']}');
  }
  num total(String kind)=>transactions.where((v)=>v['kind']==kind).fold<num>(0,(a,v)=>a+number(v['amount']));
  num bankTotal(String kind,String id)=>transactions.where((v)=>v['kind']==kind&&v['bank_id'].toString()==id).fold<num>(0,(a,v)=>a+number(v['amount']));
@@ -194,7 +222,7 @@ class _ShiftPageState extends State<ShiftPage> {
   line('MTEL + AERO',number(widget.kasa['mtel_dopuna'])+number(widget.kasa['aero_dopuna'])),
   line('Kredi Kartı',widget.kasa['card']),
   FilledButton.icon(onPressed:handoff,icon:const Icon(Icons.check),label:const Text('Vardiya Devri Kaydet')),
-  for(final h in handoffs)ListTile(title:Text('${h['shift_number']}. Vardiya - ${h['employee_name']}'),subtitle:Text('Teslim: ${km(h['delivered_cash'])} / Beklenen: ${km(h['expected_cash'])}')),
+  for(final h in handoffs)ListTile(onTap:()=>handoff(existing:h),title:Text('${h['shift_number']}. Vardiya - ${h['employee_name']}'),subtitle:Text('Teslim: ${km(h['delivered_cash'])} / Beklenen: ${km(h['expected_cash'])}\\n${h['closed_at']??''}'),trailing:Wrap(mainAxisSize:MainAxisSize.min,children:[IconButton(icon:const Icon(Icons.edit),onPressed:()=>handoff(existing:h)),IconButton(icon:const Icon(Icons.delete_outline),onPressed:()=>deleteHandoff(h))])),
  ]);
  @override Widget build(BuildContext context){
   return ListView(children:[
