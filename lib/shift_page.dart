@@ -82,7 +82,7 @@ class _ShiftPageState extends State<ShiftPage> {
  bool autoClosing=false;
  String dateOf(DateTime d)=>d.toIso8601String().substring(0,10);
  Future<void> closePreviousDayFromArchive()async{
-   if(autoClosing||offline||pendingWrites.isNotEmpty)return;
+   if(autoClosing||offline||pendingWrites.isNotEmpty||busy)return;
    final now=DateTime.now();
    if(dateKey!=dateOf(now))return;
    final previous=dateOf(now.subtract(const Duration(days:1)));
@@ -106,7 +106,7 @@ class _ShiftPageState extends State<ShiftPage> {
      final expected=carry+number(totals['cash'])+adjustment;
      final closed=DateTime(now.year,now.month,now.day).toUtc().toIso8601String();
      final payload={'business_date':previous,'shift_number':3,'employee_name':'3. Vardiya',
-       'closed_at':closed,'expected_cash':expected,'delivered_cash':0,
+       'closed_at':closed,'expected_cash':expected,'delivered_cash':null,
        'status':'pending_delivery','snapshot':{
          'source':'archived_day_end_kasa','archive_date':previous,
          'cash':totals['cash'],'card':totals['card'],
@@ -147,9 +147,10 @@ class _ShiftPageState extends State<ShiftPage> {
    ]);
    if(mounted)setState((){transactions=v[0];options=v[1];banks=v[2];employees=v[3];handoffs=v[4];daily=v[5].isEmpty?{}:v[5].first;openings=v[6];error='';offline=false;lastSync=DateTime.now();});
    await persistLocal();
-   if(dateKey==dateOf(DateTime.now()))Future.microtask(closePreviousDayFromArchive);
+
   }catch(e){if(mounted)setState((){error='Çevrimdışı: yerel kayıtlar gösteriliyor';offline=true;});}
   finally{busy=false;}
+  if(mounted&&dateKey==dateOf(DateTime.now()))Future.microtask(closePreviousDayFromArchive);
  }
  Future<void> save(String method,String table,Object? data,{String filter=''})async{
   if(busy)return;busy=true;
