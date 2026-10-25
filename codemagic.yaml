@@ -1,0 +1,56 @@
+workflows:
+  android-debug:
+    name: SS OIL Android test APK
+    max_build_duration: 60
+    environment:
+      flutter: stable
+    scripts:
+      - name: Create complete Flutter Android scaffold
+        script: |
+          set -eu
+          mkdir -p /tmp/ssoil_generated
+          cd /tmp/ssoil_generated
+          flutter create --platforms=android --org com.ssoil --project-name ss_oil_stok_kontrol .
+          cd "$CM_BUILD_DIR"
+          cp -R /tmp/ssoil_generated/android ./android_scaffold
+          cp -R android_scaffold/. ./android/
+          rm -rf android_scaffold
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          import shutil
+          manifest=Path('android/app/src/main/AndroidManifest.xml')
+          s=manifest.read_text()
+          s=s.replace('<application','<uses-permission android:name="android.permission.INTERNET"/><uses-permission android:name="android.permission.CAMERA"/><application',1)
+          s=s.replace('<application','<application android:usesCleartextTraffic="true"',1)
+          manifest.write_text(s)
+          for icon in Path('android_icons').glob('mipmap-*/ic_launcher.png'):
+              dst=Path('android/app/src/main/res')/icon.parent.name/'ic_launcher.png'
+              dst.parent.mkdir(parents=True,exist_ok=True)
+              shutil.copy2(icon,dst)
+          PYCODE
+          flutter pub get
+          # file_picker Android plugin uses compileSdk 34, while lifecycle requires 36.
+          # Patch only its cached Android Gradle configuration for this CI build.
+          python3 - <<'PYFIX'
+          from pathlib import Path
+          import re
+          cache = Path.home()/'.pub-cache'/'hosted'/'pub.dev'
+          candidates = sorted(cache.glob('file_picker-*/android/build.gradle'))
+          candidates += sorted(cache.glob('file_picker-*/android/build.gradle.kts'))
+          if not candidates:
+              raise SystemExit('file_picker Android Gradle file not found in pub cache')
+          for gradle in candidates:
+              old = gradle.read_text()
+              new = re.sub(r'(?m)^(\s*compileSdk(?:Version)?\s*(?:=\s*)?)34\b', r'\g<1>36', old)
+              if new == old:
+                  new = re.sub(r'(?m)^(\s*compileSdk(?:Version)?\s*(?:=\s*)?)flutter\.compileSdkVersion\b', r'\g<1>36', old)
+              if new == old and re.search(r'compileSdk', old):
+                  raise SystemExit(f'Unrecognized compileSdk configuration: {gradle}')
+              if new != old:
+                  gradle.write_text(new)
+                  print('file_picker compileSdk updated to 36:', gradle)
+          PYFIX
+      - name: Build Android debug APK
+        script: flutter build apk --debug
+    artifacts:
+      - build/app/outputs/flutter-apk/*.apk

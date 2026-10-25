@@ -1,0 +1,1 @@
+Bu paket onceki iki yonlu senkronizasyon telefon kaynaklarini aynen korur. Yalnizca lib/main.dart tema taniminda sabit SS OIL kirmizisi kullanilir. PC dosyalari degistirilmez. Flutter APK degildir. Mevcut Flutter projenizin yedegini alin, lib/main.dart dosyasini degistirin ve APK yeniden derleyin. Canli cihaz testi yapilmadi.

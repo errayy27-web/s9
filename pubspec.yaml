@@ -1,0 +1,23 @@
+name: ss_oil_yeni
+publish_to: none
+description: SS OIL yeni stok kasa ve siparis uygulamasi
+version: 2.0.0+1
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.2
+  shared_preferences: ^2.3.2
+  flutter_secure_storage: ^9.2.4
+  mobile_scanner: ^7.0.0
+  image_picker: ^1.1.2
+  path_provider: ^2.1.4
+  pdf: ^3.11.1
+  share_plus: ^10.1.4
+  excel: ^4.0.6
+  file_picker: ^8.1.6
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/ss_oil_logo.jpg

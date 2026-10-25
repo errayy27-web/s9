@@ -1,0 +1,10 @@
+SS OIL Flutter ekran onarimi (kaynak kod)
+- Her sayfa kendi sabit ValueKey kimligi ile olusturulur; farkli sayfalarin element agaclari karismaz.
+- Ayarlar metin alanlarina sabit anahtar verildi.
+- Arka plandaki 3 saniyelik Kasa, urun ve satis cekimi Ayarlar ekranini gereksiz yere yeniden cizmez.
+- Degismemis Kasa ve stok yanitlari tekrar setState tetiklemez.
+- Tek kirmizi-beyaz tema korundu.
+- SS OIL logosunda OIL siyah olan yeni gorsel kullanildi.
+- PC/Supabase ve yerel veri yapilari degistirilmedi.
+NOT: Flutter SDK ile derleme/Android cihaz testi yapilamadi. Bu duzeltmeler hatanin olasi nedenlerine yoneliktir; kesin cozum test gerektirir.
+Mevcut APK'yi kaldirmadan once bekleyen islemleri yedekleyin.

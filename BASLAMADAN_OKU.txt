@@ -1,0 +1,6 @@
+SS OIL TELEFON FLUTTER KAYNAK PAKETI
+Son verilen 3 deneme duzeltmesi lib/main.dart icine yerlestirildi.
+Bu klasorde Flutter native android/ iskeleti yoktur; APK degildir.
+Flutter SDK ile `flutter create --platforms android .` ardindan `flutter pub get` ve `flutter build apk` gerekir.
+Uygulama kimligi, imzalama ve ikon ayarlari eski Android projenizden alinmalidir; aksi halde kurulu uygulamanin uzerine guncelleme yapilamayabilir.
+Canli cihazda test edilmedi.

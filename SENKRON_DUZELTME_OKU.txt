@@ -1,0 +1,5 @@
+YALNIZCA TELEFON SENKRON DUZELTMESI. Tema ve diger ekranlar degistirilmedi.
+1. Bekleyen tek islem diger islemleri durdurmaz.
+2. Bekleyen islem varken de PC/Supabase guncel kayitlari indirilir; yerel bekleyen anahtarlar korunur.
+3. Gonderilmemis ayni kaydin ard arda duzenlenmesi birlestirilir.
+NOT: Canli PC/Supabase ve Flutter derleme testi yapilmadi. Yedek alip APK yeniden derleyin.
