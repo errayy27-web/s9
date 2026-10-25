@@ -8,7 +8,8 @@ class ShiftPage extends StatefulWidget {
  final ShiftRequest request;
  final Map<String,dynamic> kasa;
  final String kasaDate;
- const ShiftPage({super.key,required this.request,required this.kasa,required this.kasaDate});
+ final Map<String,dynamic> timedKasaHistory;
+ const ShiftPage({super.key,required this.request,required this.kasa,required this.kasaDate,required this.timedKasaHistory});
  @override State<ShiftPage> createState()=>_ShiftPageState();
 }
 class _ShiftPageState extends State<ShiftPage> {
@@ -16,6 +17,21 @@ class _ShiftPageState extends State<ShiftPage> {
  List<Map<String,dynamic>> transactions=[],options=[],banks=[],employees=[],handoffs=[],openings=[];
  Map<String,dynamic> daily={};
  String get dateKey=>date.toIso8601String().substring(0,10);
+ Map<String,dynamic>? kasaAt(DateTime cutoff){
+   final rows=(widget.timedKasaHistory[dateKey] as List?)??[];
+   Map<String,dynamic>? selected;
+   DateTime? last;
+   for(final raw in rows){
+     if(raw is! Map)continue;
+     final item=Map<String,dynamic>.from(raw);
+     final at=DateTime.tryParse('${item['at']??''}')?.toLocal();
+     if(at==null||at.isAfter(cutoff)||last!=null&&at.isBefore(last))continue;
+     final v=item['values'];
+     if(v is Map){selected=Map<String,dynamic>.from(v);last=at;}
+   }
+   return selected;
+ }
+
  num number(dynamic v)=>num.tryParse('$v'.replaceAll(',','.'))??0;
  String km(dynamic v)=>'${number(v).toStringAsFixed(2).replaceAll('.',',')} KM';
  List<Map<String,dynamic>> parse(String s)=>(jsonDecode(s) as List).map((e)=>Map<String,dynamic>.from(e as Map)).toList();
@@ -140,7 +156,8 @@ class _ShiftPageState extends State<ShiftPage> {
     initial=DateTime.tryParse('${existing['closed_at']}')?.toLocal()??now;
   }
   final timeEdit=TextEditingController(text:'${initial.hour.toString().padLeft(2,'0')}:${initial.minute.toString().padLeft(2,'0')}:${initial.second.toString().padLeft(2,'0')}');
-  final expectedAtStart=existing==null?number(daily['cash_carryover'])+number(widget.kasa['cash'])+sum('cash_collection',until:initial)-sum('cash_expense',until:initial):number(existing['expected_cash']);
+  final initialKasa=kasaAt(initial);
+  final expectedAtStart=existing==null?number(daily['cash_carryover'])+number(initialKasa?['cash'])+sum('cash_collection',until:initial)-sum('cash_expense',until:initial):number(existing['expected_cash']);
   final ok=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
     title:Text(existing==null?'Vardiya Devri':'Vardiya Kaydını Düzelt'),
     content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
@@ -148,7 +165,7 @@ class _ShiftPageState extends State<ShiftPage> {
       TextField(controller:delivered,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Teslim nakit KM')),
       if(existing!=null)TextField(controller:expectedEdit,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'Sabit beklenen nakit KM')),
       TextField(controller:timeEdit,decoration:const InputDecoration(labelText:'Vardiya işlem saati (SS:DD:SN)',helperText:'İlk kayıtta şu anki saat; sonra düzeltilebilir')),
-      if(existing==null)Text('Şu anki beklenen: ${km(expectedAtStart)}'),
+      if(existing==null)Text(initialKasa==null?'Bu saate ait kasa örneği henüz yok':'Saatteki beklenen: ${km(expectedAtStart)}'),
 
     ])),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('İptal')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Kaydet'))]));
   if(ok!=true)return;
@@ -161,14 +178,16 @@ class _ShiftPageState extends State<ShiftPage> {
   final value=num.tryParse(delivered.text.replaceAll(',','.'));
   final fixed=existing==null?null:num.tryParse(expectedEdit.text.replaceAll(',','.'));
   if(value==null||name.text.trim().isEmpty||(existing!=null&&fixed==null))return;
-  final expected=existing==null?expectedAtStart:fixed!;
+  final timedKasa=kasaAt(localStamp);
+  if(existing==null&&timedKasa==null){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Bu saate ait kayıtlı kasa verisi yok. Yanlış toplam kaydedilmedi.')));return;}
+  final expected=existing==null?number(daily['cash_carryover'])+number(timedKasa?['cash'])+sum('cash_collection',until:localStamp)-sum('cash_expense',until:localStamp):fixed!;
   final cashCollected=sum('cash_collection',until:localStamp),cashSpent=sum('cash_expense',until:localStamp);
   final bankCollected=sum('bank_collection',until:localStamp),bankSpent=sum('bank_expense',until:localStamp);
   final data=<String,dynamic>{'employee_name':name.text.trim(),'expected_cash':expected,'delivered_cash':value,'closed_at':closedAt};
   if(existing==null){
     data.addAll({'business_date':dateKey,'shift_number':shift,'status':'closed','closed_at':closedAt,
       'snapshot':{'cash_collection':cashCollected,'cash_expense':cashSpent,
-        'bank_collection':bankCollected,'bank_expense':bankSpent,'recorded_at':closedAt}});
+        'bank_collection':bankCollected,'bank_expense':bankSpent,'recorded_at':closedAt,'kasa_at_close':timedKasa,'kasa_time_source':'pc_8767_sampled','kasa_time_note':'Son bilinen sayaç örneği; gerçek PR_Z işlem saati değildir'}});
     await save('POST','ssoil_shift_handoffs',[data]);
   }else{
     await save('PATCH','ssoil_shift_handoffs',data,filter:'?id=eq.${existing['id']}&revision=eq.${existing['revision']}');
