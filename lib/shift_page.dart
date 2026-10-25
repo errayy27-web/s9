@@ -124,7 +124,12 @@ class _ShiftPageState extends State<ShiftPage> {
   final exists=previous!=null;
   await save(exists?'PATCH':'POST',table,exists?{field:data[field]}:[data],filter:exists?filter:'');
  }
- num sum(String kind)=>transactions.where((v)=>v['kind']==kind&&v['shift_number']==shift).fold<num>(0,(a,v)=>a+(num.tryParse(v['amount'].toString())??0));
+ num sum(String kind,{DateTime? until})=>transactions.where((v){
+    if(v['kind']!=kind||v['shift_number']!=shift)return false;
+    if(until==null)return true;
+    final created=DateTime.tryParse('${v['created_at']??''}')?.toLocal();
+    return created!=null&&!created.isAfter(until);
+  }).fold<num>(0,(a,v)=>a+(num.tryParse(v['amount'].toString())??0));
  Future<void> handoff({Map<String,dynamic>? existing})async{
   final name=TextEditingController(text:existing==null?'':'${existing['employee_name']??''}');
   final delivered=TextEditingController(text:existing==null?'':'${existing['delivered_cash']??''}');
@@ -135,7 +140,7 @@ class _ShiftPageState extends State<ShiftPage> {
     initial=DateTime.tryParse('${existing['closed_at']}')?.toLocal()??now;
   }
   final timeEdit=TextEditingController(text:'${initial.hour.toString().padLeft(2,'0')}:${initial.minute.toString().padLeft(2,'0')}:${initial.second.toString().padLeft(2,'0')}');
-  final expectedAtStart=existing==null?number(daily['cash_carryover'])+number(widget.kasa['cash'])+sum('cash_collection')-sum('cash_expense'):number(existing['expected_cash']);
+  final expectedAtStart=existing==null?number(daily['cash_carryover'])+number(widget.kasa['cash'])+sum('cash_collection',until:initial)-sum('cash_expense',until:initial):number(existing['expected_cash']);
   final ok=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
     title:Text(existing==null?'Vardiya Devri':'Vardiya Kaydını Düzelt'),
     content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
@@ -157,11 +162,13 @@ class _ShiftPageState extends State<ShiftPage> {
   final fixed=existing==null?null:num.tryParse(expectedEdit.text.replaceAll(',','.'));
   if(value==null||name.text.trim().isEmpty||(existing!=null&&fixed==null))return;
   final expected=existing==null?expectedAtStart:fixed!;
+  final cashCollected=sum('cash_collection',until:localStamp),cashSpent=sum('cash_expense',until:localStamp);
+  final bankCollected=sum('bank_collection',until:localStamp),bankSpent=sum('bank_expense',until:localStamp);
   final data=<String,dynamic>{'employee_name':name.text.trim(),'expected_cash':expected,'delivered_cash':value,'closed_at':closedAt};
   if(existing==null){
     data.addAll({'business_date':dateKey,'shift_number':shift,'status':'closed','closed_at':closedAt,
-      'snapshot':{'cash_collection':sum('cash_collection'),'cash_expense':sum('cash_expense'),
-        'bank_collection':sum('bank_collection'),'bank_expense':sum('bank_expense'),'recorded_at':closedAt}});
+      'snapshot':{'cash_collection':cashCollected,'cash_expense':cashSpent,
+        'bank_collection':bankCollected,'bank_expense':bankSpent,'recorded_at':closedAt}});
     await save('POST','ssoil_shift_handoffs',[data]);
   }else{
     await save('PATCH','ssoil_shift_handoffs',data,filter:'?id=eq.${existing['id']}&revision=eq.${existing['revision']}');
